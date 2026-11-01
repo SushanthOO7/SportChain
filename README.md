@@ -1,6 +1,6 @@
 # SportChain: A Blockchain-Based Provenance System for Athletic Footwear
 
-CSE 540 (Fall 2026 B) course project, Group 24: Sachin, Srikar, Sushanth, Lasya.
+CSE 540 (Fall 2026 B) course project: Group 24
 
 > **Milestone:** Smart Contract Design Draft. The contract interfaces, core logic and
 > documentation are in place. The backend and frontend are planned and described,
@@ -69,17 +69,17 @@ sportchain/
 
 ## Smart contract overview
 
-| Function | Caller | Purpose |
-|---|---|---|
-| `registerBatch(batchId, modelId, batchDocHash)` | Manufacturer | Create a production batch of model 1-10 |
-| `registerProduct(productId, batchId)` | Manufacturer | Register one pair in the caller's batch |
-| `initiateTransfer(productId, to)` | Custodian with active stage role | Start a handoff to the next stakeholder |
-| `cancelTransfer(productId)` | Sender | Cancel a handoff that has not been received |
-| `confirmReceipt(productId)` | Pending recipient | Accept custody |
-| `markSold(productId)` | Retailer (custodian) | Attest sale and customer handover; final custody status |
-| `anchorDocument(productId, docHash, docType)` | Custodian with active stage role, or certifier | Link a document hash to a pair |
-| `recordClaimVerification(productId, claimHash, passed)` | Certifier | Record a claim check |
-| `getProduct`, `getBatch`, `getDocuments`, `getClaimVerifications`, `verifyDocument`, `productExists` | Anyone | Read-only lookups |
+| Function                                                                                             | Caller                                         | Purpose                                                 |
+| ---------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------- |
+| `registerBatch(batchId, modelId, batchDocHash)`                                                      | Manufacturer                                   | Create a production batch of model 1-10                 |
+| `registerProduct(productId, batchId)`                                                                | Manufacturer                                   | Register one pair in the caller's batch                 |
+| `initiateTransfer(productId, to)`                                                                    | Custodian with active stage role               | Start a handoff to the next stakeholder                 |
+| `cancelTransfer(productId)`                                                                          | Sender                                         | Cancel a handoff that has not been received             |
+| `confirmReceipt(productId)`                                                                          | Pending recipient                              | Accept custody                                          |
+| `markSold(productId)`                                                                                | Retailer (custodian)                           | Attest sale and customer handover; final custody status |
+| `anchorDocument(productId, docHash, docType)`                                                        | Custodian with active stage role, or certifier | Link a document hash to a pair                          |
+| `recordClaimVerification(productId, claimHash, passed)`                                              | Certifier                                      | Record a claim check                                    |
+| `getProduct`, `getBatch`, `getDocuments`, `getClaimVerifications`, `verifyDocument`, `productExists` | Anyone                                         | Read-only lookups                                       |
 
 **Events:** `BatchRegistered`, `ProductRegistered`, `TransferInitiated`, `TransferCancelled`,
 `ReceiptConfirmed`, `DocumentAnchored`, `ClaimVerified`, `ProductSold`.
@@ -90,14 +90,14 @@ sportchain/
 
 ## Dependencies
 
-| Tool | Version | Purpose |
-|---|---|---|
-| [Node.js](https://nodejs.org/) | 22.13+ (or a newer supported even-numbered release) | Runs Hardhat |
-| [Hardhat](https://hardhat.org/) | 3.x | Compile, test, local blockchain, deploy |
-| Solidity | 0.8.28 | Contract language (downloaded by Hardhat on first compile) |
-| [OpenZeppelin Contracts](https://docs.openzeppelin.com/contracts/5.x/) | 5.x | Audited `AccessControl` |
-| ethers.js | 6.x | Contract calls from scripts and tests |
-| [MetaMask](https://metamask.io/) | latest | Wallet for the planned dashboard |
+| Tool                                                                   | Version                                             | Purpose                                                    |
+| ---------------------------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------- |
+| [Node.js](https://nodejs.org/)                                         | 22.13+ (or a newer supported even-numbered release) | Runs Hardhat                                               |
+| [Hardhat](https://hardhat.org/)                                        | 3.x                                                 | Compile, test, local blockchain, deploy                    |
+| Solidity                                                               | 0.8.28                                              | Contract language (downloaded by Hardhat on first compile) |
+| [OpenZeppelin Contracts](https://docs.openzeppelin.com/contracts/5.x/) | 5.x                                                 | Audited `AccessControl`                                    |
+| ethers.js                                                              | 6.x                                                 | Contract calls from scripts and tests                      |
+| [MetaMask](https://metamask.io/)                                       | latest                                              | Wallet for the planned dashboard                           |
 
 Everything is free and runs locally. No public testnet or real ETH is needed.
 
@@ -120,7 +120,7 @@ for the planned dashboard; contract tests and scripts run without it.
 
 ```bash
 npx hardhat test
-npm run typecheck  # after compiling, checks scripts/tests against generated contract types
+npm run typecheck
 ```
 
 **Start a local blockchain** (keep this terminal open)
@@ -160,14 +160,14 @@ real network.
 
 ## Status and next steps
 
-| Part | Status |
-|---|---|
-| Contract interface (`ISportChain.sol`) | Complete for this milestone |
-| Contract implementation (`SportChain.sol`) | Core logic implemented; TODOs marked in code |
-| Tests | Contract test cases implemented; run `npm test` to verify. Coverage and planned checks are in [docs/test-plan.md](docs/test-plan.md) |
-| FastAPI backend | Planned ([backend/README.md](backend/README.md)) |
-| React dashboard and QR lookup | Planned ([frontend/README.md](frontend/README.md)) |
-| Gas and latency measurements | Planned for the final report |
+| Part                                       | Status                                                                                                                               |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Contract interface (`ISportChain.sol`)     | Complete for this milestone                                                                                                          |
+| Contract implementation (`SportChain.sol`) | Core logic implemented; TODOs marked in code                                                                                         |
+| Tests                                      | Contract test cases implemented; run `npm test` to verify. Coverage and planned checks are in [docs/test-plan.md](docs/test-plan.md) |
+| FastAPI backend                            | Planned ([backend/README.md](backend/README.md))                                                                                     |
+| React dashboard and QR lookup              | Planned ([frontend/README.md](frontend/README.md))                                                                                   |
+| Gas and latency measurements               | Planned for the final report                                                                                                         |
 
 **Out of scope:** resale, payments, NFTs, live IoT data, oracles, public testnet and
 mainnet deployment.
@@ -193,11 +193,3 @@ mainnet deployment.
   Hashing a predictable serial number does not make it secret.
 - Claim hashes identify an exact UTF-8 JSON manifest containing the claim, product ID,
   and evidence hashes. See the reproducible encoding in [docs/architecture.md](docs/architecture.md#claim-manifest-encoding).
-
-## Repository and submission
-
-Repository: [SushanthOO7/SportChain](https://github.com/SushanthOO7/SportChain).
-The root [submission.txt](submission.txt) contains only that URL for the link submission
-mentioned in the supplied feedback. Push the corrected files before submitting it.
-`"private": true` in `package.json` prevents npm publication; it does not control
-GitHub repository visibility.
