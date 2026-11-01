@@ -9,7 +9,7 @@ pragma solidity ^0.8.28;
  * @dev    This file is the design contract for the system. It declares every
  *         data type, event, error and function signature that the SportChain
  *         implementation must provide. The off-chain parts (FastAPI backend,
- *         React dashboard) are written against this interface.
+ *         React dashboard) will be written against this interface.
  *
  *         Scope (from the project proposal):
  *         - 5 to 10 footwear models; each pair is linked to a model and a
@@ -20,7 +20,8 @@ pragma solidity ^0.8.28;
  *           current custodian, status and SHA-256 hashes of documents. Full
  *           documents and product details stay off-chain (PostgreSQL + private
  *           file storage). No personal customer data is ever stored on-chain.
- *         - All data used in the project is simulated.
+ *         - Pair IDs, batches, documents, claims and custody events are simulated.
+ *         Public model descriptions will be sourced and cited off-chain.
  *
  *         What the contract proves, and what it does not:
  *         A matching hash proves a document has not changed since it was
@@ -71,7 +72,7 @@ interface ISportChain {
      * @param modelId       Catalog model number (1-10). Model details live off-chain.
      * @param manufacturer  Account that registered the batch.
      * @param producedAt    Block timestamp when the batch was registered.
-     * @param batchDocHash  SHA-256 hash of the batch record (0 if none yet).
+     * @param batchDocHash  Optional SHA-256 batch record hash, fixed at registration (0 if omitted).
      */
     struct Batch {
         uint32 modelId;
@@ -119,7 +120,8 @@ interface ISportChain {
     /**
      * @notice Result of a certifier checking one specific claim
      *         (for example "upper is 100% recycled polyester").
-     * @param claimHash  SHA-256 hash of the claim text and evidence file.
+     * @param claimHash  SHA-256 of exact UTF-8 claim-manifest JSON bytes; see
+     *                   docs/architecture.md for field order and encoding.
      * @param passed     True if the certifier confirmed the claim.
      */
     struct ClaimVerification {
@@ -154,11 +156,11 @@ interface ISportChain {
     /// @notice A certifier recorded the result of checking a claim.
     event ClaimVerified(bytes32 indexed productId, bytes32 indexed claimHash, bool passed, address indexed certifier);
 
-    /// @notice A retailer marked the pair as sold (no buyer data is recorded).
+    /// @notice A retailer attested sale and customer handover (no buyer data recorded).
     event ProductSold(bytes32 indexed productId, address indexed retailer);
 
     // ─────────────────────────────────────────────────────────────────────
-    // Errors (every rejected action reverts with one of these)
+    // Domain errors (AccessControl also supplies role-related errors)
     // ─────────────────────────────────────────────────────────────────────
 
     error ZeroValue();                                   // an ID, hash or address was zero
@@ -185,7 +187,8 @@ interface ISportChain {
      *         and on a model number outside 1..MAX_MODEL_ID.
      * @param batchId       Unique batch ID (e.g. keccak256 of the batch code).
      * @param modelId       Catalog model number.
-     * @param batchDocHash  SHA-256 of the batch record; may be 0 and anchored later.
+     * @param batchDocHash  Optional SHA-256 batch record hash; 0 if omitted. Fixed here.
+     *                      Later evidence can only be anchored to individual pairs.
      */
     function registerBatch(bytes32 batchId, uint32 modelId, bytes32 batchDocHash) external;
 
@@ -195,8 +198,8 @@ interface ISportChain {
      *         Sets status to Manufactured with the caller as custodian.
      *         Reverts with ProductAlreadyExists on a duplicate ID.
      * @param productId  Unique pair ID. The QR code on the box encodes this
-     *                   value. It is a hash of the serial number, so the
-     *                   raw serial is never exposed on-chain.
+     *                   value, encoded as a Keccak-256 hash of the serial number.
+     *                   Predictable serials remain guessable; hashing is not secrecy.
      * @param batchId    Batch the pair belongs to.
      */
     function registerProduct(bytes32 productId, bytes32 batchId) external;
@@ -207,7 +210,8 @@ interface ISportChain {
 
     /**
      * @notice Start handing a pair to the next stakeholder.
-     * @dev    Caller must be the current custodian.
+     * @dev    Caller must be the current custodian and hold MANUFACTURER_ROLE
+     *         from Manufactured or DISTRIBUTOR_ROLE from AtDistributor.
      *         From Manufactured the recipient must hold DISTRIBUTOR_ROLE.
      *         From AtDistributor the recipient must hold RETAILER_ROLE.
      *         Sets status to InTransit; the caller keeps custody until the
@@ -218,23 +222,27 @@ interface ISportChain {
     /**
      * @notice Cancel an open transfer (e.g. a shipment was lost or misrouted).
      * @dev    Only the sender (still the current custodian). Restores the
-     *         status the pair had before the transfer started.
+     *         status the pair had before the transfer started. Allowed even after
+     *         sender role revocation as a recovery action; no new shipment is authorized.
      */
     function cancelTransfer(bytes32 productId) external;
 
     /**
      * @notice Confirm that a pair in transit has physically arrived.
      * @dev    Only the pending custodian. Moves custody to the caller and
-     *         sets status to AtDistributor or AtRetailer, depending on the
-     *         caller's role. The retailer's confirmation is the
-     *         "retailer-attested delivery" described in the proposal.
+     *         sets status to AtDistributor or AtRetailer from the shipment origin.
+     *         Rechecks the required recipient role. Retailer receipt confirms
+     *         distributor-to-store arrival, not customer delivery. Sender role
+     *         revocation does not prevent an active recipient accepting custody.
      */
     function confirmReceipt(bytes32 productId) external;
 
     /**
-     * @notice Record that a pair was sold to a consumer.
+     * @notice Attest that a pair was sold and handed to a consumer.
      * @dev    Only RETAILER_ROLE, only the current custodian, only from
-     *         AtRetailer. Sold is final. No buyer information is recorded.
+     *         AtRetailer. Combines sale and retailer-attested final delivery in
+     *         this prototype. Sold ends custody changes, but authorized evidence
+     *         and claim checks remain allowed. No buyer information is recorded.
      */
     function markSold(bytes32 productId) external;
 
@@ -244,7 +252,10 @@ interface ISportChain {
 
     /**
      * @notice Link the hash of an off-chain document to a pair.
-     * @dev    Allowed for the current custodian or any CERTIFIER_ROLE account.
+     * @dev    Allowed for an active CERTIFIER_ROLE account or the current
+     *         custodian with the role for its custody stage. InTransit uses the
+     *         sender's previous stage; Sold requires RETAILER_ROLE.
+     *         Permitted after sale; does not change custody or lifecycle status.
      *         Reverts with DuplicateDocument if the same hash is already
      *         linked to this pair.
      */

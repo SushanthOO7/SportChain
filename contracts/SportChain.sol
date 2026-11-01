@@ -34,7 +34,7 @@ contract SportChain is ISportChain, AccessControl {
     /// @notice Receives pairs from manufacturers; ships pairs to retailers.
     bytes32 public constant DISTRIBUTOR_ROLE = keccak256("DISTRIBUTOR_ROLE");
 
-    /// @notice Confirms delivery from distributors; marks pairs as sold.
+    /// @notice Confirms store receipt; attests sale and customer handover.
     bytes32 public constant RETAILER_ROLE = keccak256("RETAILER_ROLE");
 
     /// @notice Optional: records claim verifications and anchors certificates.
@@ -159,8 +159,10 @@ contract SportChain is ISportChain, AccessControl {
 
         // Each stage may only ship forward to the next kind of stakeholder.
         if (p.status == Status.Manufactured) {
+            _checkRole(MANUFACTURER_ROLE, msg.sender);
             if (!hasRole(DISTRIBUTOR_ROLE, to)) revert InvalidRecipient(productId, to);
         } else if (p.status == Status.AtDistributor) {
+            _checkRole(DISTRIBUTOR_ROLE, msg.sender);
             if (!hasRole(RETAILER_ROLE, to)) revert InvalidRecipient(productId, to);
         } else {
             // InTransit (already moving), AtRetailer (sell instead) and Sold cannot ship.
@@ -242,7 +244,9 @@ contract SportChain is ISportChain, AccessControl {
         productMustExist(productId)
     {
         if (docHash == bytes32(0)) revert ZeroValue();
-        if (_products[productId].currentCustodian != msg.sender && !hasRole(CERTIFIER_ROLE, msg.sender)) {
+        Product storage p = _products[productId];
+        bool activeCustodian = p.currentCustodian == msg.sender && hasRole(_custodyRole(productId), msg.sender);
+        if (!activeCustodian && !hasRole(CERTIFIER_ROLE, msg.sender)) {
             revert NotAuthorizedToAnchor(productId, msg.sender);
         }
         if (_isAnchored[productId][docHash]) revert DuplicateDocument(productId, docHash);
@@ -281,6 +285,19 @@ contract SportChain is ISportChain, AccessControl {
 
         // TODO (midterm): decide whether a certifier may re-check the same
         // claim (current draft allows it; the latest entry is the newest result).
+    }
+
+    /**
+     * @dev Role required of a registered pair's current custodian when anchoring.
+     *      During transit the sender retains its origin-stage role. Sold pairs
+     *      retain the retailer custodian. Called only after productMustExist.
+     */
+    function _custodyRole(bytes32 productId) private view returns (bytes32) {
+        Status stage = _products[productId].status;
+        if (stage == Status.InTransit) stage = _statusBeforeTransit[productId];
+        if (stage == Status.Manufactured) return MANUFACTURER_ROLE;
+        if (stage == Status.AtDistributor) return DISTRIBUTOR_ROLE;
+        return RETAILER_ROLE; // AtRetailer or Sold
     }
 
     // ─────────────────────────────────────────────────────────────────────

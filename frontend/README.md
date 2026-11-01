@@ -9,7 +9,7 @@ web dashboard described in the project proposal.
 |---|---|---|
 | `/manufacturer` | Manufacturer | Register batches and pairs, start transfers, upload documents |
 | `/distributor` | Distributor | Confirm receipt, start transfers to retailers |
-| `/retailer` | Retailer | Confirm receipt, mark pairs sold |
+| `/retailer` | Retailer | Confirm store receipt, attest sale and customer handover |
 | `/certifier` | Certifier | Record claim verifications |
 | `/lookup/:productId` | Consumer | QR lookup: status, custody timeline, document checks (no wallet needed) |
 

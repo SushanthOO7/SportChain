@@ -129,10 +129,156 @@ describe("SportChain", function () {
 
     it("lets a certifier record a claim verification", async function () {
       const { sc, certifier } = await deployFixture();
-      const claim = ethers.sha256(ethers.toUtf8Bytes("upper: 100% recycled polyester"));
+      // Hash the exact UTF-8 manifest bytes, including the evidence file hash.
+      const manifest = JSON.stringify({
+        schema: "sportchain.claim.v1",
+        productId: PAIR_ID,
+        claim: "upper: 100% recycled polyester",
+        evidenceHashes: [DOC_HASH],
+      });
+      const claim = ethers.sha256(ethers.toUtf8Bytes(manifest));
       await expect(sc.connect(certifier).recordClaimVerification(PAIR_ID, claim, true))
         .to.emit(sc, "ClaimVerified").withArgs(PAIR_ID, claim, true, certifier.address);
       expect((await sc.getClaimVerifications(PAIR_ID)).length).to.equal(1);
     });
+  });
+});
+
+// Move through real handoffs so authorization tests exercise each custody stage.
+async function reachStage(stage: string) {
+  const f = await deployFixture();
+  const { sc, manufacturer, distributor, retailer } = f;
+  if (stage === "Manufactured") return f;
+  await sc.connect(manufacturer).initiateTransfer(PAIR_ID, distributor.address);
+  if (stage === "ManufacturerInTransit") return f;
+  await sc.connect(distributor).confirmReceipt(PAIR_ID);
+  if (stage === "AtDistributor") return f;
+  await sc.connect(distributor).initiateTransfer(PAIR_ID, retailer.address);
+  if (stage === "DistributorInTransit") return f;
+  await sc.connect(retailer).confirmReceipt(PAIR_ID);
+  if (stage === "Sold") await sc.connect(retailer).markSold(PAIR_ID);
+  return f;
+}
+
+describe("Active organizational roles", function () {
+  for (const stage of ["Manufactured", "AtDistributor"]) {
+    it(`rejects a forward transfer by a revoked custodian at ${stage}`, async function () {
+      const { sc, manufacturer, distributor, retailer } = await reachStage(stage);
+      const sender = stage === "Manufactured" ? manufacturer : distributor;
+      const role = stage === "Manufactured" ? await sc.MANUFACTURER_ROLE() : await sc.DISTRIBUTOR_ROLE();
+      const recipient = stage === "Manufactured" ? distributor : retailer;
+      await sc.revokeRole(role, sender.address);
+      await expect(sc.connect(sender).initiateTransfer(PAIR_ID, recipient.address))
+        .to.be.revertedWithCustomError(sc, "AccessControlUnauthorizedAccount")
+        .withArgs(sender.address, role);
+      expect((await sc.getProduct(PAIR_ID)).pendingCustodian).to.equal(ethers.ZeroAddress);
+    });
+  }
+
+  for (const stage of ["Manufactured", "ManufacturerInTransit", "AtDistributor", "DistributorInTransit", "AtRetailer", "Sold"]) {
+    it(`rejects document anchoring by a revoked custodian at ${stage}`, async function () {
+      const { sc, manufacturer, distributor, retailer } = await reachStage(stage);
+      const sender = stage.startsWith("Manufactur") ? manufacturer
+        : stage.includes("Distributor") ? distributor : retailer;
+      const role = sender === manufacturer ? await sc.MANUFACTURER_ROLE()
+        : sender === distributor ? await sc.DISTRIBUTOR_ROLE() : await sc.RETAILER_ROLE();
+      const earlierHash = ethers.sha256(ethers.toUtf8Bytes("evidence before revocation"));
+      await sc.connect(sender).anchorDocument(PAIR_ID, earlierHash, DocType.Other);
+      expect(await sc.verifyDocument(PAIR_ID, earlierHash)).to.equal(true);
+      await sc.revokeRole(role, sender.address);
+      await expect(sc.connect(sender).anchorDocument(PAIR_ID, DOC_HASH, DocType.Other))
+        .to.be.revertedWithCustomError(sc, "NotAuthorizedToAnchor")
+        .withArgs(PAIR_ID, sender.address);
+      expect(await sc.verifyDocument(PAIR_ID, DOC_HASH)).to.equal(false);
+    });
+  }
+
+  it("does not substitute an unrelated organizational role for the custody role", async function () {
+    const { sc, manufacturer } = await deployFixture();
+    await sc.grantRole(await sc.RETAILER_ROLE(), manufacturer.address);
+    await sc.revokeRole(await sc.MANUFACTURER_ROLE(), manufacturer.address);
+    await expect(sc.connect(manufacturer).anchorDocument(PAIR_ID, DOC_HASH, DocType.Other))
+      .to.be.revertedWithCustomError(sc, "NotAuthorizedToAnchor");
+  });
+
+  it("allows a revoked sender to cancel, but requires role restoration to ship again", async function () {
+    const { sc, manufacturer, distributor } = await reachStage("ManufacturerInTransit");
+    const role = await sc.MANUFACTURER_ROLE();
+    await sc.revokeRole(role, manufacturer.address);
+    await expect(sc.connect(manufacturer).cancelTransfer(PAIR_ID))
+      .to.emit(sc, "TransferCancelled").withArgs(PAIR_ID, manufacturer.address, distributor.address);
+    const p = await sc.getProduct(PAIR_ID);
+    expect(p.status).to.equal(Status.Manufactured);
+    expect(p.pendingCustodian).to.equal(ethers.ZeroAddress);
+    expect(p.currentCustodian).to.equal(manufacturer.address);
+    await expect(sc.connect(manufacturer).initiateTransfer(PAIR_ID, distributor.address))
+      .to.be.revertedWithCustomError(sc, "AccessControlUnauthorizedAccount");
+    await sc.grantRole(role, manufacturer.address);
+    await expect(sc.connect(manufacturer).initiateTransfer(PAIR_ID, distributor.address))
+      .to.emit(sc, "TransferInitiated");
+  });
+
+  for (const stage of ["ManufacturerInTransit", "DistributorInTransit"]) {
+    it(`rejects receipt after the pending recipient's role is revoked at ${stage}`, async function () {
+      const { sc, distributor, retailer } = await reachStage(stage);
+      const recipient = stage === "ManufacturerInTransit" ? distributor : retailer;
+      const role = stage === "ManufacturerInTransit" ? await sc.DISTRIBUTOR_ROLE() : await sc.RETAILER_ROLE();
+      await sc.revokeRole(role, recipient.address);
+      await expect(sc.connect(recipient).confirmReceipt(PAIR_ID))
+        .to.be.revertedWithCustomError(sc, "InvalidRecipient");
+      expect((await sc.getProduct(PAIR_ID)).status).to.equal(Status.InTransit);
+    });
+  }
+
+  it("allows an active pending recipient to receive after the sender's role is revoked", async function () {
+    const { sc, manufacturer, distributor } = await reachStage("ManufacturerInTransit");
+    await sc.revokeRole(await sc.MANUFACTURER_ROLE(), manufacturer.address);
+    await sc.connect(distributor).confirmReceipt(PAIR_ID);
+    const p = await sc.getProduct(PAIR_ID);
+    expect(p.status).to.equal(Status.AtDistributor);
+    expect(p.currentCustodian).to.equal(distributor.address);
+  });
+
+  it("allows an active certifier to anchor independently of custody and blocks revocation", async function () {
+    const { sc, certifier } = await deployFixture();
+    await sc.connect(certifier).anchorDocument(PAIR_ID, DOC_HASH, DocType.Certificate);
+    await sc.revokeRole(await sc.CERTIFIER_ROLE(), certifier.address);
+    await expect(sc.connect(certifier).anchorDocument(PAIR_ID, ethers.sha256(ethers.toUtf8Bytes("new evidence")), DocType.Certificate))
+      .to.be.revertedWithCustomError(sc, "NotAuthorizedToAnchor");
+  });
+});
+
+describe("Sold products", function () {
+  it("rejects further custody transfers", async function () {
+    const { sc, retailer, distributor } = await reachStage("Sold");
+    await expect(sc.connect(retailer).initiateTransfer(PAIR_ID, distributor.address))
+      .to.be.revertedWithCustomError(sc, "InvalidStatus").withArgs(PAIR_ID, Status.Sold);
+  });
+
+  it("rejects a repeated sale and handover", async function () {
+    const { sc, retailer } = await reachStage("Sold");
+    await expect(sc.connect(retailer).markSold(PAIR_ID))
+      .to.be.revertedWithCustomError(sc, "InvalidStatus").withArgs(PAIR_ID, Status.Sold);
+  });
+
+  it("allows authorized evidence and verification after sale without changing custody or status", async function () {
+    const { sc, retailer, certifier } = await reachStage("Sold");
+    await sc.connect(retailer).anchorDocument(PAIR_ID, DOC_HASH, DocType.ReceiptRecord);
+    await sc.connect(certifier).anchorDocument(PAIR_ID, ethers.sha256(ethers.toUtf8Bytes("simulated certificate")), DocType.Certificate);
+    const manifest = JSON.stringify({
+      schema: "sportchain.claim.v1",
+      productId: PAIR_ID,
+      claim: "upper: 100% recycled polyester",
+      evidenceHashes: [DOC_HASH],
+    });
+    await sc.connect(certifier).recordClaimVerification(
+      PAIR_ID, ethers.sha256(ethers.toUtf8Bytes(manifest)), true,
+    );
+    expect(await sc.verifyDocument(PAIR_ID, DOC_HASH)).to.equal(true);
+    expect((await sc.getDocuments(PAIR_ID)).length).to.equal(2);
+    expect((await sc.getClaimVerifications(PAIR_ID)).length).to.equal(1);
+    const p = await sc.getProduct(PAIR_ID);
+    expect(p.status).to.equal(Status.Sold);
+    expect(p.currentCustodian).to.equal(retailer.address);
   });
 });

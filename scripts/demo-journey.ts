@@ -47,7 +47,7 @@ const tampered = ethers.sha256(ethers.toUtf8Bytes("simulated retailer receipt re
 console.log("Original document verifies:", await sc.verifyDocument(pairId, docHash));
 console.log("Edited document verifies:  ", await sc.verifyDocument(pairId, tampered));
 
-// 5. Retailer marks the pair sold
+// 5. Retailer attests sale and customer handover (combined in this prototype)
 await (await sc.connect(retailer).markSold(pairId)).wait();
 
 const p = await sc.getProduct(pairId);

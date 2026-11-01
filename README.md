@@ -4,7 +4,9 @@ CSE 540 (Fall 2026 B) course project, Group 24: Sachin, Srikar, Sushanth, Lasya.
 
 > **Milestone:** Smart Contract Design Draft. The contract interfaces, core logic and
 > documentation are in place. The backend and frontend are planned and described,
-> but not built yet. All data in this project is simulated.
+> but not built yet. Demo/test identifiers, batches, documents, verification results,
+> and custody events are simulated. The planned model catalog will use cited public
+> product descriptions and team-owned or appropriately licensed images.
 
 ## Project description
 
@@ -16,8 +18,11 @@ SportChain records the life of each pair of athletic shoes on a shared ledger:
   registers each pair in that batch with a unique ID. The QR code on the box encodes
   this ID.
 - **Two-step custody transfer.** The current holder starts a transfer and the recipient
-  confirms receipt. Both parties sign every handoff. The retailer's confirmation is the
-  retailer-attested delivery.
+  confirms receipt. Both parties submit signed transactions for every custody handoff.
+  Retailer receipt confirms distributor-to-store arrival, not customer delivery.
+- **Sale and customer handover.** For this simplified prototype, `markSold()` records
+  both a sale and the retailer's attestation that the pair was handed to the consumer.
+  This is the proposal's retailer-attested final delivery; no buyer details are stored.
 - **Document anchoring.** SHA-256 hashes of off-chain documents (batch records, shipping
   records, certificates) are stored on-chain. Anyone can re-hash a file and check it. A
   mismatch shows the file was modified.
@@ -49,7 +54,7 @@ sportchain/
 ├── scripts/
 │   └── demo-journey.ts          # Runs one full simulated journey on a local node
 ├── test/
-│   └── SportChain.ts            # Draft test suite (12 tests)
+│   └── SportChain.ts            # Contract and authorization regression tests
 ├── docs/
 │   ├── architecture.md          # Diagrams, role table, on-chain vs off-chain data
 │   └── test-plan.md             # Implemented and planned tests
@@ -57,6 +62,8 @@ sportchain/
 ├── frontend/                    # Planned React + Vite dashboard (README only)
 ├── hardhat.config.ts
 ├── package.json
+├── package-lock.json
+├── submission.txt               # Repository URL for the link submission
 └── tsconfig.json
 ```
 
@@ -66,11 +73,11 @@ sportchain/
 |---|---|---|
 | `registerBatch(batchId, modelId, batchDocHash)` | Manufacturer | Create a production batch of model 1-10 |
 | `registerProduct(productId, batchId)` | Manufacturer | Register one pair in the caller's batch |
-| `initiateTransfer(productId, to)` | Current custodian | Start a handoff to the next stakeholder |
+| `initiateTransfer(productId, to)` | Custodian with active stage role | Start a handoff to the next stakeholder |
 | `cancelTransfer(productId)` | Sender | Cancel a handoff that has not been received |
 | `confirmReceipt(productId)` | Pending recipient | Accept custody |
-| `markSold(productId)` | Retailer (custodian) | Final status; no buyer data recorded |
-| `anchorDocument(productId, docHash, docType)` | Custodian or certifier | Link a document hash to a pair |
+| `markSold(productId)` | Retailer (custodian) | Attest sale and customer handover; final custody status |
+| `anchorDocument(productId, docHash, docType)` | Custodian with active stage role, or certifier | Link a document hash to a pair |
 | `recordClaimVerification(productId, claimHash, passed)` | Certifier | Record a claim check |
 | `getProduct`, `getBatch`, `getDocuments`, `getClaimVerifications`, `verifyDocument`, `productExists` | Anyone | Read-only lookups |
 
@@ -85,7 +92,7 @@ sportchain/
 
 | Tool | Version | Purpose |
 |---|---|---|
-| [Node.js](https://nodejs.org/) | 22 or newer | Runs Hardhat |
+| [Node.js](https://nodejs.org/) | 22.13+ (or a newer supported even-numbered release) | Runs Hardhat |
 | [Hardhat](https://hardhat.org/) | 3.x | Compile, test, local blockchain, deploy |
 | Solidity | 0.8.28 | Contract language (downloaded by Hardhat on first compile) |
 | [OpenZeppelin Contracts](https://docs.openzeppelin.com/contracts/5.x/) | 5.x | Audited `AccessControl` |
@@ -97,13 +104,15 @@ Everything is free and runs locally. No public testnet or real ETH is needed.
 ## Setup
 
 ```bash
-git clone https://github.com/<your-username>/sportchain.git
-cd sportchain
-npm install
+git clone https://github.com/SushanthOO7/SportChain.git
+cd SportChain
+npm ci
 npx hardhat compile
 ```
 
-The first compile downloads the Solidity compiler, so it needs an internet connection.
+Dependency installation and the first compile need an internet connection. `npm ci`
+uses the committed lockfile for a reproducible installation. MetaMask is only needed
+for the planned dashboard; contract tests and scripts run without it.
 
 ## Usage
 
@@ -111,6 +120,7 @@ The first compile downloads the Solidity compiler, so it needs an internet conne
 
 ```bash
 npx hardhat test
+npm run typecheck  # after compiling, checks scripts/tests against generated contract types
 ```
 
 **Start a local blockchain** (keep this terminal open)
@@ -129,7 +139,7 @@ npx hardhat run scripts/demo-journey.ts --network localhost
 
 The script deploys the contract, grants roles, registers a pair, moves it from
 manufacturer to distributor to retailer, anchors a document, shows that an edited
-copy fails verification, and marks the pair sold.
+copy fails verification, and records the retailer-attested sale and customer handover.
 
 ## Deployment
 
@@ -154,10 +164,40 @@ real network.
 |---|---|
 | Contract interface (`ISportChain.sol`) | Complete for this milestone |
 | Contract implementation (`SportChain.sol`) | Core logic implemented; TODOs marked in code |
-| Tests | 12 passing; more planned in [docs/test-plan.md](docs/test-plan.md) |
+| Tests | Contract test cases implemented; run `npm test` to verify. Coverage and planned checks are in [docs/test-plan.md](docs/test-plan.md) |
 | FastAPI backend | Planned ([backend/README.md](backend/README.md)) |
 | React dashboard and QR lookup | Planned ([frontend/README.md](frontend/README.md)) |
 | Gas and latency measurements | Planned for the final report |
 
 **Out of scope:** resale, payments, NFTs, live IoT data, oracles, public testnet and
 mainnet deployment.
+
+## Draft policies and limitations
+
+- Forward transfers require the custodian's active role for the current stage:
+  manufacturer from `Manufactured`, distributor from `AtDistributor`. Recipients
+  must have the next stage's role when the transfer starts and when receipt is confirmed.
+- Document anchoring requires an active certifier role, or custody plus the role for
+  that custody stage. During transit the sender's previous stage applies; after sale
+  the retained retailer custodian must still have `RETAILER_ROLE`.
+- A sender whose role was revoked can cancel an outstanding transfer as a recovery
+  action. Revocation does not erase custody or history; the admin must restore the
+  appropriate role before that custodian can resume normal writes. An active pending
+  recipient may still confirm an already initiated transfer after sender revocation.
+- `Sold` prevents further transfers and repeated sale. Authorized evidence and claim
+  verification may still be appended. The retailer remains the recorded custodian;
+  consumer ownership and delivery tracking are outside this draft.
+- `batchDocHash` is optional and fixed at batch registration. There is no batch hash
+  update function. Later evidence is attached to individual pairs with `anchorDocument`.
+- IDs use Keccak-256 (`ethers.id`); file and claim-manifest hashes use SHA-256.
+  Hashing a predictable serial number does not make it secret.
+- Claim hashes identify an exact UTF-8 JSON manifest containing the claim, product ID,
+  and evidence hashes. See the reproducible encoding in [docs/architecture.md](docs/architecture.md#claim-manifest-encoding).
+
+## Repository and submission
+
+Repository: [SushanthOO7/SportChain](https://github.com/SushanthOO7/SportChain).
+The root [submission.txt](submission.txt) contains only that URL for the link submission
+mentioned in the supplied feedback. Push the corrected files before submitting it.
+`"private": true` in `package.json` prevents npm publication; it does not control
+GitHub repository visibility.
