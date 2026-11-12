@@ -1,34 +1,62 @@
-# Node
+﻿# Dependencies and build output
 node_modules/
-npm-debug.log*
-
-# Hardhat build output
-artifacts/
-cache/
-types/
-coverage/
 dist/
+*.tsbuildinfo
+/artifacts/
+/cache/
+/types/
+/.dist/
+/ignition/deployments/chain-31337/
 
-# Hardhat Ignition local deployments (chain 31337 is recreated on every node restart)
-ignition/deployments/chain-31337/
+# Local deployments, uploads, databases and logs
+/.runtime/
+/backend/data/
+/data/
+*.log
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
 
-# Environment and secrets (never commit private keys)
+# Environment variables and credentials
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+.aws/
 
-# Python (FastAPI backend)
-__pycache__/
-*.pyc
+# Python environments and caches
 .venv/
 venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pytest-tmp/
+pytest-cache-files-*/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
 
-# Frontend build output
-frontend/node_modules/
-frontend/dist/
+# Test reports and package-manager caches
+coverage/
+.coverage
+htmlcov/
+test-results/
+playwright-report/
+playwright/.cache/
+.npm-cache/
+.npm/
+.pnpm-store/
 
-# OS / editor
-.DS_Store
-Thumbs.db
+# Local agent and editor state
+.agents/
+.codex/
+.superpowers/
 .vscode/
 .idea/
+.DS_Store
+Thumbs.db

@@ -1,21 +1,34 @@
-# Frontend (planned: React + Vite dashboard)
+﻿# Frontend
 
-Not implemented in the Smart Contract Draft milestone. This folder will hold the
-web dashboard described in the project proposal.
+React, TypeScript and Vite application with stakeholder dashboards and public pair
+lookup. Wallet transactions use ethers.js; QR codes are generated locally.
 
-## Planned pages (React Router)
+From `frontend/`:
 
-| Route | User | Actions |
-|---|---|---|
-| `/manufacturer` | Manufacturer | Register batches and pairs, start transfers, upload documents |
-| `/distributor` | Distributor | Confirm receipt, start transfers to retailers |
-| `/retailer` | Retailer | Confirm store receipt, attest sale and customer handover |
-| `/certifier` | Certifier | Record claim verifications |
-| `/lookup/:productId` | Consumer | QR lookup: status, custody timeline, document checks (no wallet needed) |
+```powershell
+npm.cmd ci
+npm.cmd run dev
+npm.cmd run build
+```
 
-## Planned stack
+Vite proxies `/api` to `http://127.0.0.1:8000`. Set `API_PROXY_URL` to change the
+target. The contract ABI, address and chain ID come from `/api/config`.
 
-- React + Vite, React Router
-- ethers.js v6 with MetaMask for signed transactions
-- The contract ABI from `artifacts/contracts/SportChain.sol/SportChain.json`
-- Clear error states for reverted transactions (custom errors decoded with ethers.js)
+Routes: `/`, `/manufacturer`, `/distributor`, `/retailer`, `/certifier`, `/admin`
+and `/lookup/:code`. Lookup accepts a pair's bytes32 ID or serial code.
+
+Wallet sessions are held in memory and cleared when the account or network
+changes. The app requests a network switch when connecting to the wrong chain.
+Public lookup and file comparison do not require a wallet.
+
+With the seeded chain, API and frontend running:
+
+```powershell
+npx.cmd playwright install chromium
+npm.cmd run test:e2e
+npm.cmd run format:check
+```
+
+Browser tests cover public lookup, the signed custody journey, recovery from
+expired sessions, responsive layout and automated accessibility checks. The wallet
+adapter used by tests is not part of the application bundle.

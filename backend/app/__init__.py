@@ -1,0 +1,1 @@
+"""SportChain off-chain application."""

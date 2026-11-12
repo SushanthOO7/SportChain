@@ -1,195 +1,237 @@
-# SportChain: A Blockchain-Based Provenance System for Athletic Footwear
+﻿# SportChain
 
-CSE 540 (Fall 2026 B) course project: Group 24
+SportChain records the supply-chain history of athletic footwear. Manufacturers register batches and individual pairs, distributors and retailers confirm custody transfers, and consumers look up a pair's history through its serial number or QR code.
 
-> **Milestone:** Smart Contract Design Draft. The contract interfaces, core logic and
-> documentation are in place. The backend and frontend are planned and described,
-> but not built yet. Demo/test identifiers, batches, documents, verification results,
-> and custody events are simulated. The planned model catalog will use cited public
-> product descriptions and team-owned or appropriately licensed images.
+Documents are stored privately off-chain. Their SHA-256 hashes are recorded on the blockchain so a file can be checked for changes. Certifiers can also record pass/fail attestations against specific product claims.
 
-## Project description
+CSE 540, Fall 2026 B, Group 24.
 
-Counterfeit footwear enters retail channels because manufacturers, distributors and
-retailers each keep separate records, and nobody can check a pair's full history.
-SportChain records the life of each pair of athletic shoes on a shared ledger:
+## Workflow
 
-- **Registration.** A manufacturer registers a production batch of one model, then
-  registers each pair in that batch with a unique ID. The QR code on the box encodes
-  this ID.
-- **Two-step custody transfer.** The current holder starts a transfer and the recipient
-  confirms receipt. Both parties submit signed transactions for every custody handoff.
-  Retailer receipt confirms distributor-to-store arrival, not customer delivery.
-- **Sale and customer handover.** For this simplified prototype, `markSold()` records
-  both a sale and the retailer's attestation that the pair was handed to the consumer.
-  This is the proposal's retailer-attested final delivery; no buyer details are stored.
-- **Document anchoring.** SHA-256 hashes of off-chain documents (batch records, shipping
-  records, certificates) are stored on-chain. Anyone can re-hash a file and check it. A
-  mismatch shows the file was modified.
-- **Optional claim verification.** A certifier can record whether a specific product claim
-  (for example, a material) was confirmed.
-- **Public lookup.** Consumers read a pair's status, custody history and document checks
-  through free `view` calls, with no wallet and no role.
+1. An administrator grants manufacturer, distributor, retailer and certifier roles to wallet addresses.
+2. A manufacturer registers a batch and its pairs.
+3. The current custodian initiates a transfer; the named recipient confirms receipt before custody changes.
+4. A retailer records sale and customer handover.
+5. Consumers view the timeline and compare document hashes without a wallet.
 
-The contract enforces the rules. Only authorized roles can write. Duplicate IDs are
-rejected. Pairs can only move forward (manufacturer → distributor → retailer → sold).
-Every change emits an event, and the dashboard rebuilds a pair's timeline from those
-events.
+The local demo includes six fictional footwear models and sample pairs at different stages. All seeded documents and claims are simulated. A matching hash verifies file integrity; it does not prove that a document is truthful or that a physical shoe is genuine. QR codes can be copied.
 
-**What it does not prove.** A matching hash shows a record has not changed since it was
-anchored. It does not prove the record's claims are true, and QR codes can be copied.
-SportChain makes records tamper-evident, not truthful.
+## Architecture
 
-## Repository structure
-
-```text
-sportchain/
-├── contracts/
-│   ├── interfaces/
-│   │   └── ISportChain.sol      # Types, events, errors and all function signatures
-│   └── SportChain.sol           # Implementation (OpenZeppelin AccessControl)
-├── ignition/
-│   └── modules/
-│       └── SportChain.ts        # Hardhat Ignition deployment module
-├── scripts/
-│   └── demo-journey.ts          # Runs one full simulated journey on a local node
-├── test/
-│   └── SportChain.ts            # Contract and authorization regression tests
-├── docs/
-│   ├── architecture.md          # Diagrams, role table, on-chain vs off-chain data
-│   └── test-plan.md             # Implemented and planned tests
-├── backend/                     # Planned FastAPI + PostgreSQL service (README only)
-├── frontend/                    # Planned React + Vite dashboard (README only)
-├── hardhat.config.ts
-├── package.json
-├── package-lock.json
-├── submission.txt               # Repository URL for the link submission
-└── tsconfig.json
+```mermaid
+flowchart LR
+    Browser[React application] -->|Public reads and private evidence| API[FastAPI]
+    Browser -->|Request signatures| Wallet[MetaMask]
+    Wallet -->|Signed transactions| Chain[Hardhat local blockchain]
+    API -->|Read state and index events| Chain
+    API --> DB[(PostgreSQL or SQLite)]
+    API --> Files[Private document storage]
+    Chain --> Contract[SportChain Solidity contract]
 ```
 
-## Smart contract overview
+The contract enforces roles and lifecycle transitions. The backend stores model details, files and claim manifests, and rebuilds custody history from contract events. The frontend loads the deployment address and ABI through the API; stakeholder writes are signed in MetaMask.
 
-| Function                                                                                             | Caller                                         | Purpose                                                 |
-| ---------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------- |
-| `registerBatch(batchId, modelId, batchDocHash)`                                                      | Manufacturer                                   | Create a production batch of model 1-10                 |
-| `registerProduct(productId, batchId)`                                                                | Manufacturer                                   | Register one pair in the caller's batch                 |
-| `initiateTransfer(productId, to)`                                                                    | Custodian with active stage role               | Start a handoff to the next stakeholder                 |
-| `cancelTransfer(productId)`                                                                          | Sender                                         | Cancel a handoff that has not been received             |
-| `confirmReceipt(productId)`                                                                          | Pending recipient                              | Accept custody                                          |
-| `markSold(productId)`                                                                                | Retailer (custodian)                           | Attest sale and customer handover; final custody status |
-| `anchorDocument(productId, docHash, docType)`                                                        | Custodian with active stage role, or certifier | Link a document hash to a pair                          |
-| `recordClaimVerification(productId, claimHash, passed)`                                              | Certifier                                      | Record a claim check                                    |
-| `getProduct`, `getBatch`, `getDocuments`, `getClaimVerifications`, `verifyDocument`, `productExists` | Anyone                                         | Read-only lookups                                       |
+See [architecture notes](docs/architecture.md) for permissions, event synchronization and claim encoding.
 
-**Events:** `BatchRegistered`, `ProductRegistered`, `TransferInitiated`, `TransferCancelled`,
-`ReceiptConfirmed`, `DocumentAnchored`, `ClaimVerified`, `ProductSold`.
+## Stack
 
-**Roles:** `DEFAULT_ADMIN_ROLE`, `MANUFACTURER_ROLE`, `DISTRIBUTOR_ROLE`, `RETAILER_ROLE`,
-`CERTIFIER_ROLE`. The full permission table and diagrams are in
-[docs/architecture.md](docs/architecture.md).
+| Component | Technologies |
+|---|---|
+| Smart contract | Solidity 0.8.28, OpenZeppelin AccessControl |
+| Blockchain tooling | Hardhat 3, ethers.js 6, Hardhat Ignition |
+| Backend | Python, FastAPI, Uvicorn, SQLAlchemy, web3.py |
+| Database | PostgreSQL; SQLite for the default local setup |
+| Frontend | React 19, TypeScript, Vite, React Router |
+| Wallet | MetaMask or an injected Ethereum wallet |
+| Tests | Mocha/Chai, pytest, Playwright, axe-core |
 
-## Dependencies
+## Requirements
 
-| Tool                                                                   | Version                                             | Purpose                                                    |
-| ---------------------------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------- |
-| [Node.js](https://nodejs.org/)                                         | 22.13+ (or a newer supported even-numbered release) | Runs Hardhat                                               |
-| [Hardhat](https://hardhat.org/)                                        | 3.x                                                 | Compile, test, local blockchain, deploy                    |
-| Solidity                                                               | 0.8.28                                              | Contract language (downloaded by Hardhat on first compile) |
-| [OpenZeppelin Contracts](https://docs.openzeppelin.com/contracts/5.x/) | 5.x                                                 | Audited `AccessControl`                                    |
-| ethers.js                                                              | 6.x                                                 | Contract calls from scripts and tests                      |
-| [MetaMask](https://metamask.io/)                                       | latest                                              | Wallet for the planned dashboard                           |
+- Node.js 22.13+ on a supported even-numbered release. Node 24 is used for development.
+- Python 3.11+.
+- MetaMask browser extension for stakeholder actions. Public lookup needs no wallet.
+- Docker Compose for the optional container setup.
 
-Everything is free and runs locally. No public testnet or real ETH is needed.
+Dependency installation and the first Solidity compile require internet access. The local chain uses test ETH; no purchase is needed.
 
 ## Setup
 
-```bash
+Clone the repository and install dependencies. Run these commands in PowerShell:
+
+```powershell
 git clone https://github.com/SushanthOO7/SportChain.git
 cd SportChain
-npm ci
-npx hardhat compile
+npm.cmd ci
+npm.cmd ci --prefix frontend
+python -m venv backend/.venv
+backend/.venv/Scripts/python.exe -m pip install -r backend/requirements.lock
+npm.cmd run compile
 ```
 
-Dependency installation and the first compile need an internet connection. `npm ci`
-uses the committed lockfile for a reproducible installation. MetaMask is only needed
-for the planned dashboard; contract tests and scripts run without it.
+On macOS/Linux, use `npm`, `python3`, and `backend/.venv/bin/python` in the equivalent commands. Both Node lockfiles and the Python dependency lockfile are committed.
 
-## Usage
+### Start the local application
 
-**Run the tests**
+After installation, the Windows launcher starts the chain, deploys and seeds the contract, then starts the API and frontend:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-local.ps1
+```
+
+Keep that terminal open. Press Enter to stop the services it started. It refuses occupied ports and writes logs to `.runtime/`. The execution-policy setting applies only to this PowerShell process.
+
+| Service | URL |
+|---|---|
+| Application | http://127.0.0.1:5173 |
+| API documentation | http://127.0.0.1:8000/docs |
+| Blockchain RPC | http://127.0.0.1:8545 |
+
+The RPC address accepts JSON-RPC requests; it is not a web page.
+
+### Manual startup
+
+For separate terminals or non-Windows development:
 
 ```bash
-npx hardhat test
-npm run typecheck
+# Terminal 1: keep the local chain running
+npm run node
 ```
-
-**Start a local blockchain** (keep this terminal open)
 
 ```bash
-npx hardhat node
+# Terminal 2: deploy and seed after the chain starts
+npm run seed
 ```
 
-This starts a chain at `http://127.0.0.1:8545` with 20 funded test accounts.
-
-**Run a full simulated journey** (in a second terminal)
+```powershell
+# Terminal 3: keep the API running
+cd backend
+.venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
 
 ```bash
-npx hardhat run scripts/demo-journey.ts --network localhost
+# Terminal 4: from the repository root
+npm run frontend
 ```
 
-The script deploys the contract, grants roles, registers a pair, moves it from
-manufacturer to distributor to retailer, anchors a document, shows that an edited
-copy fails verification, and records the retailer-attested sale and customer handover.
+On Linux/macOS, the API command is `.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000` from `backend/`.
 
-## Deployment
+Seeding writes the shared deployment configuration, sample certificate, claim manifest and gas report under `.runtime/`. Running seed again creates a new registry. Restarting the local chain discards its state; reseed before continuing.
 
-Deploy to the running local node with Hardhat Ignition:
+### Database configuration
+
+The native setup defaults to SQLite at `backend/data/sportchain.db`. Private uploads are saved under `backend/data/files`.
+
+To use an existing PostgreSQL instance, create a database and set the connection string before starting the API:
+
+```powershell
+$env:DATABASE_URL='postgresql+psycopg://sportchain:sportchain@127.0.0.1:5432/sportchain'
+```
+
+Other settings are listed in [backend/.env.example](backend/.env.example). Export environment variables explicitly; `.env` files are not loaded automatically. Tables are created on first startup.
+
+### Docker Compose
 
 ```bash
-npx hardhat ignition deploy ignition/modules/SportChain.ts --network localhost
+docker compose up --build
 ```
 
-The deployer (account #0) becomes the admin and grants roles with
-`grantRole(role, account)`. The deployed address is printed in the terminal and saved
-under `ignition/deployments/`.
+This starts PostgreSQL, Hardhat, the seed service, FastAPI and Vite. Ports bind to `127.0.0.1`. Database and document volumes persist; the local chain does not.
 
-**Connecting MetaMask (for the planned dashboard):** add a network with RPC URL
-`http://127.0.0.1:8545` and chain ID `31337`, then import one of the private keys
-printed by `npx hardhat node`. These keys are public test keys; never use them on a
-real network.
+After recreating the chain:
 
-## Status and next steps
+```bash
+docker compose up -d postgres chain
+docker compose run --rm seed
+docker compose up -d backend frontend
+```
 
-| Part                                       | Status                                                                                                                               |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Contract interface (`ISportChain.sol`)     | Complete for this milestone                                                                                                          |
-| Contract implementation (`SportChain.sol`) | Core logic implemented; TODOs marked in code                                                                                         |
-| Tests                                      | Contract test cases implemented; run `npm test` to verify. Coverage and planned checks are in [docs/test-plan.md](docs/test-plan.md) |
-| FastAPI backend                            | Planned ([backend/README.md](backend/README.md))                                                                                     |
-| React dashboard and QR lookup              | Planned ([frontend/README.md](frontend/README.md))                                                                                   |
-| Gas and latency measurements               | Planned for the final report                                                                                                         |
+The native application and PostgreSQL backend have been tested. Docker Compose startup has not been verified in the development environment.
 
-**Out of scope:** resale, payments, NFTs, live IoT data, oracles, public testnet and
-mainnet deployment.
+## MetaMask setup
 
-## Draft policies and limitations
+Add a custom network:
 
-- Forward transfers require the custodian's active role for the current stage:
-  manufacturer from `Manufactured`, distributor from `AtDistributor`. Recipients
-  must have the next stage's role when the transfer starts and when receipt is confirmed.
-- Document anchoring requires an active certifier role, or custody plus the role for
-  that custody stage. During transit the sender's previous stage applies; after sale
-  the retained retailer custodian must still have `RETAILER_ROLE`.
-- A sender whose role was revoked can cancel an outstanding transfer as a recovery
-  action. Revocation does not erase custody or history; the admin must restore the
-  appropriate role before that custodian can resume normal writes. An active pending
-  recipient may still confirm an already initiated transfer after sender revocation.
-- `Sold` prevents further transfers and repeated sale. Authorized evidence and claim
-  verification may still be appended. The retailer remains the recorded custodian;
-  consumer ownership and delivery tracking are outside this draft.
-- `batchDocHash` is optional and fixed at batch registration. There is no batch hash
-  update function. Later evidence is attached to individual pairs with `anchorDocument`.
-- IDs use Keccak-256 (`ethers.id`); file and claim-manifest hashes use SHA-256.
-  Hashing a predictable serial number does not make it secret.
-- Claim hashes identify an exact UTF-8 JSON manifest containing the claim, product ID,
-  and evidence hashes. See the reproducible encoding in [docs/architecture.md](docs/architecture.md#claim-manifest-encoding).
+| Setting | Value |
+|---|---|
+| Name | SportChain Local |
+| RPC URL | `http://127.0.0.1:8545` |
+| Chain ID | `31337` |
+| Currency symbol | `ETH` |
+
+Import the appropriate Hardhat test account using the private key printed by `npm run node`, or saved in `.runtime/chain.log` when using the launcher:
+
+| Hardhat account | Role |
+|---|---|
+| #0 | Administrator |
+| #1 | Manufacturer |
+| #2 | Distributor |
+| #3 | Retailer |
+| #4 | Certifier |
+
+These are public development keys. Never use these accounts with real funds.
+
+In the app, open the matching stakeholder page and click **Connect wallet**. Approve account access and the network switch if prompted. Switching accounts clears the app's current permissions and private-evidence session; reconnect afterward.
+
+A message signature signs in to the private document API. A transaction signature changes the blockchain record. The app never requests private keys.
+
+## Try the demo
+
+Search for `SC-PAIR-0006` on Overview. It has a completed custody timeline, a certificate hash and a certifier attestation. Compare `.runtime/sample-certificate.txt` under **Document integrity**, then edit a copy and compare again.
+
+To run a new journey:
+
+1. As Manufacturer, register a unique batch and pair serial.
+2. Search for that serial on Overview to open its record. New pairs appear in tables under their model name and shortened blockchain ID.
+3. Store a document privately, then click **Anchor hash** and sign the transaction.
+4. On Manufacturer, set the distributor recipient. Below the custody table, click **Start transfer** beside your pair's ID.
+5. Switch to Distributor, reconnect and confirm receipt. Start the next transfer to the retailer.
+6. Switch to Retailer, reconnect and confirm store receipt, then record sale and handover.
+7. Optionally use Certifier to prepare a claim manifest and record an attestation.
+8. View the finished record without connecting a wallet.
+
+An upload remains pending if its anchoring transaction is declined; retry anchoring without uploading again. QR codes link to the current application origin, so a loopback URL cannot be opened from another device.
+
+## Tests
+
+```powershell
+# From the repository root
+npm.cmd test
+npm.cmd run typecheck
+npm.cmd run build:frontend
+npm.cmd run format:check --prefix frontend
+
+# Backend unit tests
+cd backend
+.venv/Scripts/python.exe -m pytest -q
+```
+
+For backend integration tests, keep a seeded local chain running and set `SPORTCHAIN_LIVE_TEST=1` before running pytest. For browser tests, keep the chain, API and frontend running:
+
+```powershell
+# From the repository root
+frontend/node_modules/.bin/playwright.cmd install chromium
+npm.cmd run test:e2e --prefix frontend
+```
+
+Integration and browser tests use chain snapshots and reverts. Do not run them while making manual transactions. Tests and lockfiles belong in Git; installed dependencies, databases, uploads, keys, deployment files and test reports do not.
+
+Gas measurements are written by `npm run seed`. Run `python scripts/measure-api.py` for local lookup latency measurements.
+
+## Project structure
+
+```text
+contracts/          Solidity registry and interface
+ignition/           Contract deployment module
+backend/app/        API, database models, wallet authentication and event indexing
+backend/tests/      API security and chain integration tests
+frontend/src/       React pages, wallet integration and shared components
+frontend/tests/     Browser and accessibility tests
+scripts/            Setup, launcher, seeding, demo and measurements
+test/               Smart contract tests
+docs/               Architecture notes
+compose.yaml        Optional local stack with PostgreSQL
+```
+
+## Limitations
+
+SportChain is a local course prototype. Sale and customer handover are retailer-attested; buyers do not confirm receipt and their identities are not stored. Lost signing keys have no custody override. Certification records an organization's statement, not an independent inspection by the software. Payments, resale and public-network deployment are outside the project scope.

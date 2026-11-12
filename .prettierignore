@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+**/.venv
+**/dist
+**/test-results
+.runtime
+.npm-cache
+artifacts
+cache
+types
+package-lock.json
+frontend/package-lock.json

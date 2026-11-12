@@ -1,0 +1,10 @@
+FROM node:24-bookworm-slim
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY hardhat.config.ts tsconfig.json ./
+COPY contracts ./contracts
+COPY scripts ./scripts
+COPY ignition ./ignition
+RUN npx hardhat compile --build-profile production
+CMD ["npx", "hardhat", "node", "--hostname", "0.0.0.0"]
