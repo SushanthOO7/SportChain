@@ -59,7 +59,7 @@ for lost signing keys.
 | Document and claim hashes, authors, timestamps | Blockchain |
 | Custody history | Contract events, indexed in the database |
 | Catalog descriptions | Database |
-| Original model illustrations | Frontend SVG components |
+| Illustrative footwear artwork | Frontend transparent WebP assets |
 | Uploaded documents | Private file storage |
 | Upload metadata and exact claim manifests | Database |
 | Login challenges and hashed session tokens | Database |
@@ -136,10 +136,14 @@ hash and certifier's result; it cannot evaluate the underlying claim.
 
 ## Operating scope
 
-The local demo uses fictional models and simulated evidence. Public test keys are
+The application starts without catalog or business records. Product models and organization profiles are entered by authorized users. Public test keys are
 for the local chain only. QR codes can be copied, and authorized participants can
 submit false statements. A matching hash establishes file integrity, not physical
 authenticity or truthfulness.
 
 PostgreSQL is supported; SQLite is the default native development database. Schema
 version 1 creates initial tables. Future schema changes require migrations.
+
+## User-entered metadata
+
+Catalog models are created by manufacturers or administrators; model slots are limited to 1–10 by the existing contract. Organization profiles are administrator-managed metadata and never grant roles by themselves. Live roles are read from the contract. Human-readable batch and pair codes are stored per deployment only after verifying the submitting wallet is the actual registering manufacturer and hashing the supplied code into the registered identifier. Public overview totals come from indexed on-chain events and current product state. API startup never imports sample models, claims or certificates.

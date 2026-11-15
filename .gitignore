@@ -1,4 +1,4 @@
-﻿# Dependencies and build output
+# Dependencies and build output
 node_modules/
 dist/
 *.tsbuildinfo
@@ -6,7 +6,7 @@ dist/
 /cache/
 /types/
 /.dist/
-/ignition/deployments/chain-31337/
+/ignition/deployments/
 
 # Local deployments, uploads, databases and logs
 /.runtime/
@@ -60,3 +60,24 @@ playwright/.cache/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local design and implementation working files
+/DESIGN.md
+/UX-CONTRACT.md
+/premium-audit.json
+/premium-ui.json
+/docs/superpowers/
+
+# Editor backups and temporary files
+*.swp
+*.swo
+*~
+*.tmp
+*.bak
+
+# Additional generated reports and tool caches
+blob-report/
+.vite/
+.hypothesis/
+.tox/
+.nox/

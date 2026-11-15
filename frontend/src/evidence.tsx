@@ -1,3 +1,5 @@
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
 import { useApp } from "./context";
@@ -68,7 +70,7 @@ export function EvidencePanel({ productId }: { productId: string }) {
   }
   if (!account) return null;
   return (
-    <section className="panel padded">
+    <section className="panel padded" id="private-evidence">
       <div className="section-heading">
         <div>
           <p className="eyebrow">PRIVATE EVIDENCE</p>
@@ -86,7 +88,7 @@ export function EvidencePanel({ productId }: { productId: string }) {
         </p>
       )}
       {!token && (
-        <button
+        <Button
           className="button outline"
           disabled={busy}
           onClick={() =>
@@ -96,11 +98,11 @@ export function EvidencePanel({ productId }: { productId: string }) {
           }
         >
           Sign in for private evidence
-        </button>
+        </Button>
       )}
       <form noValidate onSubmit={upload} className="form-stack upload-form">
         <label htmlFor="document-file">Document (maximum 10 MiB)</label>
-        <input
+        <Input
           id="document-file"
           type="file"
           onChange={(e) => setFile(e.target.files?.[0])}
@@ -117,9 +119,9 @@ export function EvidencePanel({ productId }: { productId: string }) {
             </option>
           ))}
         </select>
-        <button className="button" disabled={busy || !file}>
+        <Button className="button" disabled={busy || !file}>
           Store file privately
-        </button>
+        </Button>
       </form>
       <ul className="evidence-list">
         {uploads.map((record) => (
@@ -130,15 +132,15 @@ export function EvidencePanel({ productId }: { productId: string }) {
             </div>
             <code className="break">{record.hash}</code>
             <div className="button-row">
-              <button
+              <Button
                 disabled={busy}
                 className="button small outline"
                 onClick={() => download(record)}
               >
                 Download
-              </button>
+              </Button>
               {record.status === "pending" && (
-                <button
+                <Button
                   disabled={busy}
                   className="button small"
                   onClick={() =>
@@ -150,14 +152,14 @@ export function EvidencePanel({ productId }: { productId: string }) {
                   }
                 >
                   Anchor hash
-                </button>
+                </Button>
               )}
             </div>
           </li>
         ))}
       </ul>
       {token && (
-        <button
+        <Button
           className="text-button"
           disabled={busy}
           onClick={() =>
@@ -174,7 +176,7 @@ export function EvidencePanel({ productId }: { productId: string }) {
           }
         >
           Clean up expired pending uploads
-        </button>
+        </Button>
       )}
     </section>
   );

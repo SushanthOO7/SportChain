@@ -1,0 +1,10 @@
+services:
+  postgres:
+    ports: !reset []
+    restart: unless-stopped
+  chain:
+    restart: unless-stopped
+  backend:
+    restart: unless-stopped
+  frontend:
+    restart: unless-stopped

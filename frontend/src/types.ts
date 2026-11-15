@@ -16,6 +16,8 @@ export type Model = {
   description: string;
 };
 export type Pair = {
+  serial?: string;
+  batchCode?: string;
   productId: string;
   batchId: string;
   modelId: number;

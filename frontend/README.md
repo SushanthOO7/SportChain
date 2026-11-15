@@ -1,4 +1,4 @@
-﻿# Frontend
+# Frontend
 
 React, TypeScript and Vite application with stakeholder dashboards and public pair
 lookup. Wallet transactions use ethers.js; QR codes are generated locally.
@@ -21,7 +21,7 @@ Wallet sessions are held in memory and cleared when the account or network
 changes. The app requests a network switch when connecting to the wrong chain.
 Public lookup and file comparison do not require a wallet.
 
-With the seeded chain, API and frontend running:
+With the deployed chain, API and frontend running (see the root README for isolated wallet-test setup):
 
 ```powershell
 npx.cmd playwright install chromium

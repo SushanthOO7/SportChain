@@ -1,4 +1,4 @@
-"""Opt-in integration tests: SPORTCHAIN_LIVE_TEST=1 with a seeded local node."""
+"""Opt-in integration tests: SPORTCHAIN_LIVE_TEST=1 with a deployed local node."""
 import json
 import os
 import secrets
@@ -14,7 +14,7 @@ from app.chain import Chain, ROOT, plain
 from app.main import create_app
 from app.models import Document, Event
 
-pytestmark = pytest.mark.skipif(os.getenv("SPORTCHAIN_LIVE_TEST") != "1", reason="Requires a seeded local Hardhat node")
+pytestmark = pytest.mark.skipif(os.getenv("SPORTCHAIN_LIVE_TEST") != "1", reason="Requires a deployed local Hardhat node")
 
 
 @pytest.fixture
@@ -29,6 +29,14 @@ def live(tmp_path):
         test_engine = create_engine(database_url)
         Base.metadata.drop_all(test_engine)
         test_engine.dispose()
+    # Create an isolated test pair inside the chain snapshot; production starts empty.
+    batch = Web3.keccak(text="qa-fixture-batch-" + secrets.token_hex(6))
+    pid = "0x" + Web3.keccak(text="qa-fixture-pair-" + secrets.token_hex(6)).hex().removeprefix("0x")
+    chain.validate()
+    manufacturer = chain.config["accounts"]["manufacturer"]
+    chain.web3.eth.wait_for_transaction_receipt(chain.contract.functions.registerBatch(batch, 1, bytes(32)).transact({"from": manufacturer}))
+    chain.web3.eth.wait_for_transaction_receipt(chain.contract.functions.registerProduct(pid, batch).transact({"from": manufacturer}))
+    chain.test_product_id = pid
     app = create_app(database_url=database_url, storage=tmp_path / "files", chain=chain)
     with TestClient(app) as client:
         yield client, chain
@@ -93,7 +101,7 @@ def test_evidence_requires_matching_author_and_chain_rewind_invalidates_confirma
     c = chain.contract
     w3 = chain.web3
     account = chain.config["accounts"]["manufacturer"]
-    pid = chain.config["pairs"][0]["productId"]
+    pid = chain.test_product_id
     headers = authenticate(client, 1)
     doc = client.post(f"/api/products/{pid}/documents", headers=headers, files={"file": ("a.txt", secrets.token_bytes(20))}, data={"docType": "0"}).json()
     # Another authorized signer anchoring identical bytes must not confirm this upload.
@@ -118,7 +126,7 @@ def test_multi_role_custodian_uses_authoritative_transit_permissions(live):
     def tx(function, sender):
         chain.web3.eth.wait_for_transaction_receipt(function.transact({"from": sender}))
     manufacturer = accounts["manufacturer"]
-    pid = chain.config["pairs"][0]["productId"]
+    pid = chain.test_product_id
     tx(c.functions.grantRole(Web3.keccak(text="DISTRIBUTOR_ROLE"), manufacturer), accounts["admin"])
     tx(c.functions.initiateTransfer(pid, manufacturer), manufacturer)
     tx(c.functions.confirmReceipt(pid), manufacturer)
@@ -134,9 +142,9 @@ def test_new_deployment_invalidates_sessions_uploads_and_index(live, tmp_path):
     client, chain = live
     config = chain.config
     headers = authenticate(client, 1)
-    pid = config["pairs"][0]["productId"]
+    pid = chain.test_product_id
     uploaded = client.post(f"/api/products/{pid}/documents", headers=headers, files={"file": ("old.txt", b"old deployment evidence")}, data={"docType": "0"}).json()
-    assert client.get("/api/products").json()["total"] == 6
+    assert client.get("/api/products").json()["total"] == 1
     artifact = json.loads((ROOT / "artifacts/contracts/SportChain.sol/SportChain.json").read_text())
     factory = chain.web3.eth.contract(abi=artifact["abi"], bytecode=artifact["bytecode"])
     receipt = chain.web3.eth.wait_for_transaction_receipt(factory.constructor(config["accounts"]["admin"]).transact({"from": config["accounts"]["admin"]}))

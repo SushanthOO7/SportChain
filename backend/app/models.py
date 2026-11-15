@@ -72,3 +72,20 @@ class CatalogModel(Base):
     category: Mapped[str] = mapped_column(String(100))
     color: Mapped[str] = mapped_column(String(20))
     description: Mapped[str] = mapped_column(Text)
+
+
+class Organization(Base):
+    __tablename__ = "organizations"
+    wallet: Mapped[str] = mapped_column(String(42), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    org_type: Mapped[str] = mapped_column(String(30))
+    description: Mapped[str] = mapped_column(String(300), default="")
+
+
+class RecordLabel(Base):
+    __tablename__ = "record_labels"
+    id: Mapped[str] = mapped_column(String(300), primary_key=True)
+    record_id: Mapped[str] = mapped_column(String(66), index=True)
+    kind: Mapped[str] = mapped_column(String(10))
+    code: Mapped[str] = mapped_column(String(200))
+    deployment: Mapped[str] = mapped_column(String(200))

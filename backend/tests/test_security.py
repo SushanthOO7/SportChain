@@ -134,3 +134,49 @@ def test_chunked_multipart_is_limited_before_parsing(client):
             yield b"x" * (1024 * 1024)
         yield b"\r\n--limit-test--\r\n"
     assert client.post(f"/api/products/{PAIR}/documents", headers=headers, content=stream()).status_code == 413
+
+
+def test_catalog_starts_empty_and_requires_authorized_creation(client):
+    assert client.get('/api/models').json() == []
+    body = {'id': 1, 'name': 'User supplied model', 'category': 'Running', 'color': '#f05a18', 'description': 'Entered by a manufacturer'}
+    assert client.post('/api/models', json=body).status_code == 401
+    headers, _ = login(client)
+    assert client.post('/api/models', json=body, headers=headers).status_code == 201
+    assert client.get('/api/models').json()[0]['name'] == body['name']
+    assert client.post('/api/models', json=body, headers=headers).status_code == 409
+    assert client.post('/api/models', json={**body, 'id': 11}, headers=headers).status_code == 422
+
+
+def test_organizations_start_empty_and_require_administrator(client):
+    assert client.get('/api/organizations').json() == []
+    headers, _ = login(client)
+    body = {'name': 'User organization', 'wallet': wallet.address, 'type': 'manufacturer', 'description': ''}
+    assert client.post('/api/organizations', json=body, headers=headers).status_code == 403
+    original = client.app.state.chain.roles
+    client.app.state.chain.roles = lambda address: ['DEFAULT_ADMIN_ROLE']
+    try:
+        assert client.post('/api/organizations', json=body, headers=headers).status_code == 201
+        assert client.get('/api/organizations').json()[0]['name'] == body['name']
+    finally:
+        client.app.state.chain.roles = original
+
+
+def test_pair_labels_require_registering_wallet(client):
+    from app.main import identifier
+    headers, _ = login(client)
+    client.app.state.chain.validate = lambda: None
+    code = 'USER-REGISTERED-PAIR'
+    response = client.post('/api/identifiers', json={'code':code,'kind':'pair'}, headers=headers)
+    assert response.status_code == 201
+    assert response.json()['recordId'] == identifier(code)
+    assert client.get('/api/config').json()['pairs'][0]['serial'] == code
+
+
+def test_manifest_is_not_displayed_for_another_product(client):
+    headers, _ = login(client)
+    prepared = client.post(f"/api/products/{PAIR}/claims", headers=headers,
+        json={"claim": "Product-specific claim", "evidenceHashes": []}).json()
+    client.app.state.chain.claims = lambda pid: [{"hash": prepared["hash"]}]
+    assert client.get(f"/api/products/{PAIR}").json()["claims"][0]["manifest"]["productId"] == PAIR
+    other = "0x" + "ef" * 32
+    assert client.get(f"/api/products/{other}").json()["claims"][0]["manifest"] is None

@@ -16,25 +16,19 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+from typing import Literal
 from sqlalchemy import create_engine, delete, select, update
 from sqlalchemy.orm import Session, sessionmaker
 from web3 import Web3
 
 from .chain import Chain, ROOT
-from .models import Base, CatalogModel, Challenge, Document, Event, Manifest, Meta, SessionToken
+from .models import Base, CatalogModel, Challenge, Document, Event, Manifest, Meta, SessionToken, Organization, RecordLabel
 from .middleware import RequestLimits
 
 logger = logging.getLogger("sportchain")
 MAX_UPLOAD = 10 * 1024 * 1024
 HEX32 = re.compile(r"^0x[0-9a-fA-F]{64}$")
-CATALOG = [
-    (1, "Relay One", "Everyday running", "#27766c", "A fictional lightweight daily trainer with a breathable mesh upper."),
-    (2, "Summit Trail", "Trail running", "#b36b36", "A fictional trail shoe with a reinforced upper and textured outsole."),
-    (3, "Court Form", "Court", "#5866a1", "A fictional court silhouette with lateral support and a durable sole."),
-    (4, "Tempo Knit", "Road running", "#b84d62", "A fictional road trainer with a flexible knit upper."),
-    (5, "Stride Studio", "Training", "#6f6957", "A fictional cross-training shoe with a stable platform."),
-    (6, "Distance Zero", "Distance running", "#3e779d", "A fictional cushioned distance trainer. All specifications are simulated."),
-]
+
 
 
 class AddressBody(BaseModel):
@@ -76,19 +70,7 @@ def create_app(database_url=None, storage=None, chain=None):
     async def lifespan(app):
         Base.metadata.create_all(engine)
         with sessions() as db:
-            for mid, name, category, color, description in CATALOG:
-                db.merge(CatalogModel(id=mid, name=name, category=category, color=color, description=description))
-            db.merge(Meta(key="schema_version", value="1"))
-            sample_manifest = ROOT / ".runtime/sample-claim.json"
-            if sample_manifest.exists():
-                # Seed evidence is public simulated content; import its exact bytes.
-                try:
-                    text = sample_manifest.read_text(encoding="utf-8")
-                    manifest = json.loads(text)
-                    digest = "0x" + hashlib.sha256(text.encode("utf-8")).hexdigest()
-                    db.merge(Manifest(id=f"{chain.identity}:{digest}", product_id=manifest["productId"], claim_hash=digest, manifest=text, deployment=chain.identity))
-                except (HTTPException, ValueError, KeyError):
-                    logger.warning("Sample claim unavailable; skipping seed manifest import")
+            db.merge(Meta(key="schema_version", value="2"))
             db.commit()
         yield
         engine.dispose()
@@ -131,13 +113,85 @@ def create_app(database_url=None, storage=None, chain=None):
         return {"status": "ok", "database": "postgresql" if database_url.startswith("postgresql") else "sqlite", "deployment": chain.identity}
 
     @app.get("/api/config")
-    def config():
-        # Contains public addresses and ABI only; never private keys.
-        return {**chain.config, "maxUploadBytes": MAX_UPLOAD, "simulated": True}
+    def config(db: Session = Depends(database)):
+        labels = list(db.scalars(select(RecordLabel).where(RecordLabel.deployment == chain.identity, RecordLabel.kind == "pair")))
+        return {**chain.config, "pairs": [{"serial": r.code, "productId": r.record_id, "modelId": 0} for r in labels], "maxUploadBytes": MAX_UPLOAD}
 
     @app.get("/api/models")
     def models(db: Session = Depends(database)):
-        return [{"id": m.id, "name": m.name, "category": m.category, "color": m.color, "description": m.description, "simulated": True} for m in db.scalars(select(CatalogModel).order_by(CatalogModel.id))]
+        return [{"id": m.id, "name": m.name, "category": m.category, "color": m.color, "description": m.description} for m in db.scalars(select(CatalogModel).order_by(CatalogModel.id))]
+
+    class ModelBody(BaseModel):
+        id: int = Field(ge=1, le=10)
+        name: str = Field(min_length=1, max_length=100)
+        category: str = Field(default="", max_length=100)
+        color: str = Field(default="#ff5a16", pattern=r"^#[0-9a-fA-F]{6}$")
+        description: str = Field(default="", max_length=2000)
+
+    @app.post("/api/models", status_code=201)
+    def add_model(body: ModelBody, address: str = Depends(current_user), db: Session = Depends(database)):
+        if not set(chain.roles(address)) & {"DEFAULT_ADMIN_ROLE", "MANUFACTURER_ROLE"}:
+            raise HTTPException(403, "A manufacturer or administrator must create catalog models.")
+        if not body.name.strip():
+            raise HTTPException(422, "Enter a model name.")
+        if db.get(CatalogModel, body.id):
+            raise HTTPException(409, "This model slot is already in use. Choose a different slot.")
+        row = CatalogModel(**body.model_dump())
+        db.add(row)
+        db.commit()
+        return body.model_dump()
+
+    class OrganizationBody(BaseModel):
+        name: str = Field(min_length=1, max_length=100)
+        wallet: str = Field(min_length=42, max_length=42)
+        type: Literal["manufacturer", "distributor", "retailer", "certifier"]
+        description: str = Field(default="", max_length=300)
+
+    @app.get("/api/organizations")
+    def organizations(db: Session = Depends(database)):
+        return [{"wallet": r.wallet, "name": r.name, "type": r.org_type, "description": r.description, "roles": chain.roles(r.wallet)} for r in db.scalars(select(Organization).order_by(Organization.name))]
+
+    @app.post("/api/organizations", status_code=201)
+    def add_organization(body: OrganizationBody, address: str = Depends(current_user), db: Session = Depends(database)):
+        if "DEFAULT_ADMIN_ROLE" not in chain.roles(address):
+            raise HTTPException(403, "Only an administrator can add organizations.")
+        if not Web3.is_address(body.wallet) or not body.name.strip():
+            raise HTTPException(422, "Enter an organization name and valid wallet address.")
+        if db.get(Organization, body.wallet.lower()):
+            raise HTTPException(409, "An organization with this wallet already exists.")
+        db.add(Organization(wallet=body.wallet.lower(), name=body.name.strip(), org_type=body.type, description=body.description))
+        db.commit()
+        return body.model_dump()
+
+    class LabelBody(BaseModel):
+        code: str = Field(min_length=1, max_length=200)
+        kind: Literal["pair", "batch"]
+
+    @app.post("/api/identifiers", status_code=201)
+    def add_identifier(body: LabelBody, address: str = Depends(current_user), db: Session = Depends(database)):
+        rid = identifier(body.code)
+        chain.validate()
+        if body.kind == "pair":
+            owner = chain.product(rid)["manufacturer"]
+        else:
+            owner = chain.contract.functions.getBatch(rid).call()[1]
+        if owner.lower() != address.lower():
+            raise HTTPException(403, "Only the registering manufacturer may save this label.")
+        key = f"{chain.identity}:{body.kind}:{rid}"
+        db.merge(RecordLabel(id=key, record_id=rid, kind=body.kind, code=body.code.strip(), deployment=chain.identity))
+        db.commit()
+        return {"recordId": rid, "code": body.code.strip()}
+
+    @app.get("/api/overview")
+    def overview(db: Session = Depends(database)):
+        chain.sync(db)
+        events = list(db.scalars(select(Event).order_by(Event.block, Event.log_index)))
+        products = [chain.product(e.product_id) for e in events if e.name == "ProductRegistered"]
+        return {"registered": len(products), "transit": sum(p["status"] == 2 for p in products),
+            "sold": sum(p["status"] == 5 for p in products), "attested": len({e.product_id for e in events if e.name == "ClaimVerified"}),
+            "documents": sum(e.name == "DocumentAnchored" for e in events), "batches": sum(e.name == "BatchRegistered" for e in events),
+            "distribution": [{"label": label, "count": sum(p["status"] in states for p in products)} for label, states in [("At manufacturer", [1]), ("At distributor", [3]), ("At retailer", [4]), ("In transit", [2]), ("Sold", [5])]],
+            "activity": [{"event": e.name, "productId": e.product_id, "timestamp": e.timestamp, "transactionHash": e.transaction, "args": json.loads(e.payload)} for e in events[-8:][::-1]]}
 
     @app.post("/api/auth/challenge")
     def challenge(body: AddressBody, db: Session = Depends(database)):
@@ -195,12 +249,15 @@ def create_app(database_url=None, storage=None, chain=None):
         rows = [chain.product(pid) for pid in ids]
         if account:
             rows = [p for p in rows if account.lower() in (p["currentCustodian"].lower(), p["pendingCustodian"].lower())]
+        labels = {r.record_id: r.code for r in db.scalars(select(RecordLabel).where(RecordLabel.deployment == chain.identity))}
+        rows = [{**p, "serial": labels.get(p["productId"]), "batchCode": labels.get(p["batchId"])} for p in rows]
         return {"items": rows[offset:offset + limit], "total": len(rows), "offset": offset, "limit": limit}
 
     @app.get("/api/batches")
     def batches(db: Session = Depends(database)):
         chain.sync(db)
-        return [json.loads(e.payload) for e in db.scalars(select(Event).where(Event.name == "BatchRegistered").order_by(Event.block))]
+        labels = {r.record_id: r.code for r in db.scalars(select(RecordLabel).where(RecordLabel.deployment == chain.identity))}
+        return [{**json.loads(e.payload), "createdAt": e.timestamp, "code": labels.get(json.loads(e.payload)["batchId"])} for e in db.scalars(select(Event).where(Event.name == "BatchRegistered").order_by(Event.block))]
 
     @app.get("/api/products/{code}")
     def product(code: str, db: Session = Depends(database)):
@@ -211,8 +268,10 @@ def create_app(database_url=None, storage=None, chain=None):
         claims = chain.claims(pid) if hasattr(chain, "claims") else []
         for claim in claims:
             manifest = db.get(Manifest, f"{chain.identity}:{claim['hash']}")
-            claim["manifest"] = json.loads(manifest.manifest) if manifest else None
-        return {**p, "timeline": history, "documents": chain.anchored(pid), "claims": claims, "simulated": True}
+            parsed = json.loads(manifest.manifest) if manifest else None
+            claim["manifest"] = parsed if manifest and manifest.product_id.lower() == pid.lower() and str(parsed.get("productId", "")).lower() == pid.lower() else None
+        labels = {r.record_id: r.code for r in db.scalars(select(RecordLabel).where(RecordLabel.deployment == chain.identity))}
+        return {**p, "serial": labels.get(pid), "batchCode": labels.get(p.get("batchId", "")), "timeline": history, "documents": chain.anchored(pid), "claims": claims}
 
     @app.get("/api/products/{code}/uploads")
     def uploads(code: str, address: str = Depends(current_user), db: Session = Depends(database)):

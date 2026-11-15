@@ -21,7 +21,7 @@ wallet-signed login; file downloads are restricted to the original uploader.
 .venv/Scripts/python.exe -m pytest -q
 ```
 
-Set `SPORTCHAIN_LIVE_TEST=1` to include integration tests against a seeded local
+Set `SPORTCHAIN_LIVE_TEST=1` to include integration tests against a local
 Hardhat chain. These tests use isolated databases and revert their transactions.
 `SPORTCHAIN_TEST_DATABASE_URL`, when set, must point to a disposable test database:
 the tests drop and recreate application tables there.

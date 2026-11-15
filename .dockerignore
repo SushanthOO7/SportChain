@@ -1,4 +1,4 @@
-﻿.git
+.git
 **/node_modules
 **/.venv
 **/__pycache__
@@ -25,3 +25,8 @@
 artifacts
 cache
 types
+
+DESIGN.md
+UX-CONTRACT.md
+premium-*.json
+docs/superpowers

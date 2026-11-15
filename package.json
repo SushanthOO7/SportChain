@@ -10,7 +10,6 @@
     "test": "hardhat test",
     "node": "hardhat node",
     "deploy:local": "hardhat ignition deploy ignition/modules/SportChain.ts --network localhost",
-    "demo": "hardhat run scripts/demo-journey.ts --network localhost",
     "seed": "hardhat run scripts/seed.ts --build-profile production --network localhost",
     "frontend": "npm --prefix frontend run dev",
     "build:frontend": "npm --prefix frontend run build"

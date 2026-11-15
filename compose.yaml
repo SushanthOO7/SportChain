@@ -5,7 +5,7 @@ services:
       POSTGRES_USER: sportchain
       POSTGRES_PASSWORD: sportchain
       POSTGRES_DB: sportchain
-    ports: ["127.0.0.1:5432:5432"]
+    ports: ["0.0.0.0:5432:5432"]
     volumes: ["postgres-data:/var/lib/postgresql/data"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sportchain"]
@@ -16,7 +16,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.chain
-    ports: ["127.0.0.1:8545:8545"]
+    ports: ["0.0.0.0:8545:8545"]
     volumes: ["./.runtime:/app/.runtime"]
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8545',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_chainId',params:[]})}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
@@ -43,7 +43,7 @@ services:
       RPC_URL: http://chain:8545
       DEPLOYMENT_FILE: /app/.runtime/deployment.json
       STORAGE_DIR: /app/backend/data/files
-    ports: ["127.0.0.1:8000:8000"]
+    ports: ["0.0.0.0:8000:8000"]
     volumes: ["./.runtime:/app/.runtime:ro", "evidence-data:/app/backend/data"]
     depends_on:
       postgres:
@@ -56,7 +56,7 @@ services:
       dockerfile: frontend/Dockerfile
     environment:
       API_PROXY_URL: http://backend:8000
-    ports: ["127.0.0.1:5173:5173"]
+    ports: ["0.0.0.0:5173:5173"]
     depends_on: [backend]
 volumes:
   postgres-data:
