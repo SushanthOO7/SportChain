@@ -127,7 +127,3 @@ Browser tests revert chain snapshots. Do not make manual transactions while live
 - `compose.yaml`, `compose.server.yaml`, and Dockerfiles: optional container setup.
 
 Install dependencies and generate build artifacts after cloning; they are excluded from Git along with credentials, local deployments, uploads, databases, test reports, and internal planning files. Keep both npm lockfiles and `backend/requirements.lock` for reproducible installs. Back up local data separately before resetting or deleting it.
-
-## Artwork and fonts
-
-Footwear scenes are illustrative assets and do not certify products or imply brand affiliation. The frontend hosts Manrope, Space Grotesk, Fraunces, and Anton locally; their SIL Open Font License files are included in `frontend/public/fonts/` and must accompany redistribution.
